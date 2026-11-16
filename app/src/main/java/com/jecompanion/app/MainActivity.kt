@@ -189,6 +189,20 @@ class MainActivity : Activity() {
                     .setPositiveButton("OK", null).show()
             } else openQuestion(task, next.first, next.second)
         })
+
+        val retryIndices = mutableListOf<Int>()
+        for (i in 0 until qs.length()) {
+            val q = qs.optJSONObject(i) ?: continue
+            if (q.optString("round1").isNotEmpty() && q.optString("round1") != "Skipped" && q.optString("round2").isEmpty()) retryIndices.add(i)
+        }
+        if (retryIndices.isNotEmpty()) {
+            card.addView(makeButton("Choose a question for second attempt") {
+                val labels = retryIndices.map { "Question " + (qs.optJSONObject(it)?.optString("number") ?: "") }
+                AlertDialog.Builder(this).setTitle("Choose a question to reattempt")
+                    .setItems(labels.toTypedArray()) { _, chosen -> openQuestion(task, retryIndices[chosen], 2) }
+                    .setNegativeButton("Cancel", null).show()
+            })
+        }
         card.addView(makeButton(if (task.optBoolean("lectureDone")) "Lecture marked complete" else "Mark lecture completed") {
             task.put("lectureDone", true)
             saveRecords()
@@ -266,7 +280,7 @@ class MainActivity : Activity() {
         })
         content.addView(makeButton("Finish attempt and mark result") {
             flushTimer()
-            showResultPicker(q, round)
+            showResultPicker(task, qIndex, q, round)
             dialog.dismiss()
         })
         dialog.setOnDismissListener {
@@ -298,7 +312,7 @@ class MainActivity : Activity() {
         } else handler.removeCallbacks(timerTick)
     }
 
-    private fun showResultPicker(q: JSONObject, round: Int) {
+    private fun showResultPicker(task: JSONObject, qIndex: Int, q: JSONObject, round: Int) {
         val options = arrayOf("Incorrect", "Correct", "Correct but Important")
         AlertDialog.Builder(this).setTitle("Check your solution").setItems(options) { _, which ->
             val result = options[which]
@@ -309,6 +323,12 @@ class MainActivity : Activity() {
             q.put("attempts", attempts).put("sessionSeconds", 0)
             activeQuestion = null; timerText = null
             saveRecords(); renderHome()
+            if (round == 1) {
+                AlertDialog.Builder(this).setTitle("First attempt saved")
+                    .setMessage("You can make a second attempt for this question now or choose it later from the target card.")
+                    .setPositiveButton("Reattempt now") { _, _ -> openQuestion(task, qIndex, 2) }
+                    .setNegativeButton("Later", null).show()
+            }
         }.setNegativeButton("Cancel", null).show()
     }
 
@@ -386,6 +406,25 @@ class MainActivity : Activity() {
                 subset.count { it.optString("result") == "Correct" || it.optString("result") == "Correct but Important" } +
                 " correct, " + subset.count { it.optString("result") == "Incorrect" } + " incorrect\n")
         }
+        val timedAttempts = attempts.filter { it.optString("result") != "Skipped" && it.optInt("seconds") > 0 }
+        val averageSeconds = if (timedAttempts.isEmpty()) 0 else timedAttempts.sumOf { it.optInt("seconds") } / timedAttempts.size
+        out.append("Average time per completed attempt: " + formatTime(averageSeconds) + "\n")
+        var improved = 0
+        var unchangedOrLower = 0
+        records.forEach { task ->
+            val qs = questions(task)
+            for (i in 0 until qs.length()) {
+                val q = qs.optJSONObject(i) ?: continue
+                val first = q.optString("round1")
+                val second = q.optString("round2")
+                if (first.isNotEmpty() && first != "Skipped" && second.isNotEmpty() && second != "Skipped") {
+                    val firstRight = first == "Correct" || first == "Correct but Important"
+                    val secondRight = second == "Correct" || second == "Correct but Important"
+                    if (!firstRight && secondRight) improved++ else unchangedOrLower++
+                }
+            }
+        }
+        out.append("Second-attempt improvements: " + improved + " | Other recorded reattempts: " + unchangedOrLower + "\n")
         out.append("\nCHAPTER ACCURACY — ALL SAVED DAYS\n")
         records.groupBy { it.optString("subject") + " — " + it.optString("chapter") }.forEach { (chapter, tasks) ->
             val tries = tasks.flatMap { attemptsFor(it) }.filter { it.optString("result") != "Skipped" }
