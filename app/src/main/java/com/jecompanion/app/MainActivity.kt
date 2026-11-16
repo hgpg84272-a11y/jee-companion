@@ -504,6 +504,7 @@ class MainActivity : Activity() {
         }
     }
 
+    @Suppress("DEPRECATION")
     private fun updateNotification() {
         val manager = getSystemService(NotificationManager::class.java) ?: return
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -514,7 +515,7 @@ class MainActivity : Activity() {
         val open = PendingIntent.getActivity(this, 10, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val builder = if (Build.VERSION.SDK_INT >= 26) android.app.Notification.Builder(this, "jee_daily")
-            else @Suppress("DEPRECATION") android.app.Notification.Builder(this)
+            else android.app.Notification.Builder(this)
         val notification = builder.setSmallIcon(android.R.drawable.ic_menu_agenda)
             .setContentTitle("JEE Companion").setContentText(message)
             .setOngoing(true).setOnlyAlertOnce(true).setContentIntent(open).build()
